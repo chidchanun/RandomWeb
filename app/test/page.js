@@ -1,59 +1,127 @@
 "use client";
 import Image from "next/image";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
+import useSWR from "swr";
+
+// SWR fetcher
+const fetcher = (url) => fetch(url).then((res) => res.json());
 
 export default function Page() {
     const [studentNumber, setStudentNumber] = useState("");
     const [studentRoom, setStudentRoom] = useState("");
-    const [classrooms, setClassrooms] = useState([]);
-    const [students, setStudents] = useState([]); // fetched students list
+    const [students, setStudents] = useState([]);
+    const [selectedImage, setSelectedImage] = useState(null);
+    const [uploadStatus, setUploadStatus] = useState("");
 
-    // Fetch classrooms on mount
-    useEffect(() => {
-        const fetchClassrooms = async () => {
-            try {
-                const res = await fetch("/api/classrooms");
-                if (!res.ok) throw new Error("Failed to fetch classrooms");
-                const data = await res.json();
-                setClassrooms(data);
-            } catch (err) {
-                console.error("Error fetching classrooms:", err);
-            }
-        };
-        fetchClassrooms();
-    }, []);
+    // Fetch classrooms using SWR
+    const { data: classrooms = [], error: classroomError } = useSWR("/api/classrooms", fetcher);
 
-    // Fetch students whenever studentRoom or studentNumber changes
+    // Fetch students when studentRoom or studentNumber changes
     useEffect(() => {
-        // Only fetch if at least classroom is selected (or you can add studentNumber too)
         if (!studentRoom) {
             setStudents([]);
             return;
         }
 
+        const controller = new AbortController();
+
         const fetchStudents = async () => {
             try {
                 const queryParams = new URLSearchParams();
-                if (studentRoom) queryParams.append("classroom", studentRoom);
-                console.log(studentRoom)
+                queryParams.append("classroom", studentRoom);
                 if (studentNumber) queryParams.append("student_number", studentNumber);
-                console.log(setStudentNumber)
 
-                const res = await fetch(`/api/students?${queryParams.toString()}`);
+                const res = await fetch(`/api/students?${queryParams.toString()}`, {
+                    signal: controller.signal,
+                });
                 if (!res.ok) throw new Error("Failed to fetch students");
                 const data = await res.json();
                 setStudents(data);
-                console.log(data)
             } catch (err) {
-                console.error("Error fetching students:", err);
+                if (err.name !== "AbortError") {
+                    console.error("Error fetching students:", err);
+                }
             }
         };
 
-        fetchStudents();
+        const timer = setTimeout(fetchStudents, 300);
+        return () => {
+            clearTimeout(timer);
+            controller.abort(); // ✅ Safely abort fetch
+        };
     }, [studentRoom, studentNumber]);
 
-    // For display, show up to 3 students:
-    const displayStudents = students.length > 0 ? students.slice(0, 3) : [];
+    const mainStudent = students[0] || null;
+    const displayStudents = useMemo(() => students.slice(0, 3), [students]);
+
+    const resizeImage = (file, maxWidth = 300, maxHeight = 400) =>
+        new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement("canvas");
+
+                    let width = img.width;
+                    let height = img.height;
+
+                    if (width > maxWidth || height > maxHeight) {
+                        if (width / height > maxWidth / maxHeight) {
+                            width = maxWidth;
+                            height = maxWidth * (img.height / img.width);
+                        } else {
+                            height = maxHeight;
+                            width = maxHeight * (img.width / img.height);
+                        }
+                    }
+
+                    canvas.width = width;
+                    canvas.height = height;
+
+                    const ctx = canvas.getContext("2d");
+                    ctx.drawImage(img, 0, 0, width, height);
+
+                    canvas.toBlob((blob) => {
+                        resolve(blob);
+                    }, "image/jpeg", 0.7); // compress quality (0.7 = 70%)
+                };
+                img.src = event.target.result;
+            };
+            reader.readAsDataURL(file);
+        });
+
+    const handleUploadImage = async () => {
+        if (!selectedImage || !mainStudent?._id) {
+            alert("กรุณาเลือกนักเรียนและอัปโหลดรูป");
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onloadend = async () => {
+            const base64Image = reader.result;
+
+            const res = await fetch("/api/student-images", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    student_id: mainStudent._id,
+                    image: base64Image,
+                }),
+            });
+
+            const result = await res.json();
+            if (res.ok) {
+                setUploadStatus("✅ อัปโหลดสำเร็จ!");
+            } else {
+                setUploadStatus("❌ อัปโหลดไม่สำเร็จ");
+                console.error(result.error);
+            }
+        };
+
+        reader.readAsDataURL(selectedImage);
+    };
+
+
 
     return (
         <div className="flex flex-col w-screen h-screen items-start box-border overflow-hidden py-8 px-20">
@@ -72,6 +140,7 @@ export default function Page() {
                         </option>
                     ))}
                 </select>
+
                 <input
                     type="number"
                     placeholder="กรอกเลขที่ 2 หลัก"
@@ -82,38 +151,60 @@ export default function Page() {
                     onChange={(e) => setStudentNumber(e.target.value)}
                     className="min-w-[150px] max-w-[200px] text-center border border-violet-500 rounded-lg focus:outline-2 focus:outline-offset-2 focus:outline-violet-500 h-10"
                 />
+
+                {mainStudent?._id && (
+                    <div className="flex flex-col items-center gap-2">
+                        <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => setSelectedImage(e.target.files[0])}
+                            className="text-[14px]"
+                        />
+                        <button
+                            type="button"
+                            onClick={handleUploadImage}
+                            className="text-white bg-green-600 hover:bg-green-700 focus:ring-4 focus:ring-green-300 font-medium rounded-lg text-[16px] px-4 py-2 focus:outline-none"
+                        >
+                            📤 อัปโหลดรูปนักเรียน
+                        </button>
+                        {uploadStatus && <p className="text-sm">{uploadStatus}</p>}
+                    </div>
+                )}
+
                 <span className="text-2xl lg:text-4xl text-right flex-1">โปรแกรมสุ่มรหัส</span>
             </div>
 
-            {/* line space */}
+            {/* Divider */}
             <div className="bg-gray-500 w-full flex h-1 mt-4"></div>
 
             {/* Random Card */}
             <div className="flex flex-row w-full h-full">
-                {/* Left Card Information Student */}
-                <div className="flex flex-col w-1/3 justify-center items-center gap-4 border-r-3 border-gray-500">
+                {/* Left Student Card */}
+                <div className="flex flex-col w-1/3 justify-center items-center gap-4 relative">
                     <Image
                         alt="Student Image"
-                        src="/Profile-Icon.png"
+                        src={mainStudent?.image || "/Profile-Icon.png"}
                         width={280}
                         height={400}
                         className="border border-black"
+                        loading="eager"
                     />
-                    <div className="text-[22px]">เลขที่ {studentNumber || "-"}</div>
+                    <div className="text-[22px]">เลขที่ {studentNumber || "โปรดกรอกเลขที่ให้เรียบร้อย"}</div>
                     <div className="text-[22px]">
-                        รหัส {displayStudents[0]?.code || "xxxxxxxxxxxxx"} ชื่อ - สกุล{" "}
-                        {displayStudents[0]?.name || "XXXXXX"}
+                        รหัส {mainStudent?.student_id || "ไม่พบข้อมูล"}{" "}
+                        {mainStudent?.full_name || "ชื่อ - สกุล ไม่พบข้อมูล"}
                     </div>
-                    <div className="text-[22px]">ห้อง {studentRoom || "-"}</div>
+                    <div className="text-[22px]">ห้อง {studentRoom || "โปรดเลือกห้องให้เรียบร้อย"}</div>
                     <button
                         type="button"
                         className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-[18px] px-5 py-2.5 me-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800 min-w-[150px] max-w-[250px] h-[60px]"
                     >
                         สุ่มสายรหัส
                     </button>
+                    <div className="absolute border-r-3 border-gray-500 w-1.5 h-full left-full"></div>
                 </div>
 
-                {/* Right Card Information student */}
+                {/* Right Side Students */}
                 <div className="flex flex-row w-2/3 gap-4 mx-2">
                     {[0, 1].map((idx) => {
                         const student = displayStudents[idx + 1];
@@ -125,6 +216,7 @@ export default function Page() {
                                     width={280}
                                     height={400}
                                     className="border border-black"
+                                    loading="lazy"
                                 />
                                 <div className="text-[22px]">เลขที่ {student?.number || "XX"}</div>
                                 <div className="text-[22px]">

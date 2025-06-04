@@ -1,25 +1,36 @@
 import dbConnect from '@/app/lib/mongodb';
 import Student from '@/app/models/Student';
+import StudentImage from '@/app/models/StudentImage';
 import { NextResponse } from 'next/server';
 
 export async function GET(req) {
+  await dbConnect();
+
+  const { searchParams } = new URL(req.url);
+  const classroom = searchParams.get("classroom");
+  const student_number = searchParams.get("student_number");
+
+  const filter = {};
+  if (classroom) filter.classroom = classroom;
+  if (student_number) filter.student_number = Number(student_number);
+
   try {
-    await dbConnect();
+    const students = await Student.find(filter).lean();
 
-    const { searchParams } = new URL(req.url);
-    const studentNumber = searchParams.get('student_number');
-    const classroom = searchParams.get('classroom');
+    // Fetch images for each student
+    const studentIds = students.map((s) => s._id);
+    const images = await StudentImage.find({ student_id: { $in: studentIds } }).lean();
 
-    // Build query filter based on params
-    const filter = {};
-    if (studentNumber) filter.number = studentNumber;
-    if (classroom) filter.classroom = classroom;
+    const merged = students.map((student) => {
+      const imageDoc = images.find((img) => img.student_id.toString() === student._id.toString());
+      return {
+        ...student,
+        image: imageDoc?.image || null,
+      };
+    });
 
-    const students = await Student.find(filter);
-
-    return NextResponse.json(students);
-  } catch (error) {
-    console.error('GET /api/students error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json(merged);
+  } catch (err) {
+    return NextResponse.json({ error: "Fetch failed", details: err.message }, { status: 500 });
   }
 }
