@@ -2,6 +2,7 @@
 import Image from "next/image";
 import { useState, useEffect, useMemo, useCallback } from "react";
 import useSWR from "swr";
+import AlertCard from "@/app/components/AlertCard";
 
 // SWR fetcher
 const fetcher = (url) => fetch(url).then(res => res.json());
@@ -12,6 +13,11 @@ export default function Page() {
     const [students, setStudents] = useState([]);
     const [selectedImage, setSelectedImage] = useState(null);
     const [uploadStatus, setUploadStatus] = useState("");
+    const [showAlert, setShowAlert] = useState(false);
+    const isButtonDisabled = !studentNumber || !studentRoom;
+
+    // For tooltip visibility
+    const [showTooltip, setShowTooltip] = useState(false);
 
     // Fetch classrooms
     const { data: classrooms = [] } = useSWR("/api/classrooms", fetcher);
@@ -148,24 +154,44 @@ export default function Page() {
             </div>
 
             {/* Divider */}
-            <div className="bg-gray-500 w-full flex h-1 mt-4"></div>
+            <div className="bg-gray-500 w-full flex h-1 mt-4 min-h-1"></div>
 
             {/* Random Card */}
             <div className="flex flex-row w-full h-full">
                 {/* Left Student Card */}
                 <div className="flex flex-col w-1/3 justify-center items-center gap-4 relative">
                     <StudentImage student={mainStudent} />
-                    <div className="text-[22px]">เลขที่ {studentNumber || "โปรดกรอกเลขที่ให้เรียบร้อย"}</div>
-                    <div className="text-[22px]">
+                    <div className="xl:text-[20px] lg:text-[18px] md:text-[10px]">เลขที่ {studentNumber || "โปรดกรอกเลขที่ให้เรียบร้อย"}</div>
+                    <div className="xl:text-[20px] lg:text-[18px] md:text-[10px]">
                         รหัส {mainStudent?.student_id || "ไม่พบข้อมูล"}{" "}
                         {mainStudent?.full_name || "ชื่อ - สกุล ไม่พบข้อมูล"}
                     </div>
-                    <div className="text-[22px]">ห้อง {studentRoom || "โปรดเลือกห้องให้เรียบร้อย"}</div>
+                    <div className="xl:text-[20px] lg:text-[18px] md:text-[10px]">ห้อง {studentRoom || "โปรดเลือกห้องให้เรียบร้อย"}</div>
                     <button
                         type="button"
-                        className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-[18px] px-5 py-2.5 me-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800 min-w-[150px] max-w-[250px] h-[60px]"
+                        disabled={isButtonDisabled}
+                        onClick={() => {
+                            if (!isButtonDisabled) setShowAlert(true);
+                        }}
+                        onMouseEnter={() => {
+                            if (isButtonDisabled) setShowTooltip(true);
+                        }}
+                        onMouseLeave={() => setShowTooltip(false)}
+                        className={`relative cursor-pointer text-white font-medium rounded-lg text-[18px] px-5 py-2.5 me-2 mb-2 min-w-[150px] max-w-[250px] h-[60px] focus:outline-none
+                            ${isButtonDisabled
+                                ? "bg-gray-400 cursor-not-allowed"
+                                : "bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800"
+                            }
+                        `}
                     >
                         สุ่มสายรหัส
+
+                        {/* Tooltip */}
+                        {showTooltip && (
+                            <div className="absolute bottom-full mb-2 left-1/2 transform -translate-x-1/2 px-3 py-1 text-sm text-white bg-black rounded shadow-lg whitespace-nowrap z-50">
+                                โปรดเลือกห้องเรียนและเลขที่นักเรียนก่อน
+                            </div>
+                        )}
                     </button>
                     <div className="absolute border-r-3 border-gray-500 w-1.5 h-full left-full"></div>
                 </div>
@@ -181,9 +207,9 @@ export default function Page() {
                             height={400}
                             className="border border-black"
                         />
-                        <div className="text-[22px]">เลขที่ XX</div>
-                        <div className="text-[22px]">รหัส xxxxxxxxxxxxx ชื่อ - สกุล XXXXXX</div>
-                        <div className="text-[22px]">ห้อง XXXX</div>
+                        <div className="xl:text-[20px] lg:text-[18px] md:text-[10px]">เลขที่ XX</div>
+                        <div className="xl:text-[20px] lg:text-[18px] md:text-[10px]">รหัส xxxxxxxxxxxxx ชื่อ - สกุล XXXXXX</div>
+                        <div className="xl:text-[20px] lg:text-[18px] md:text-[10px]">ห้อง XXXX</div>
                     </div>
                     {/* Second Card */}
                     <div className="flex flex-col justify-center items-center gap-4 w-1/2 mb-[85]">
@@ -194,12 +220,28 @@ export default function Page() {
                             height={400}
                             className="border border-black"
                         />
-                        <div className="text-[22px]">เลขที่ XX</div>
-                        <div className="text-[22px]">รหัส xxxxxxxxxxxxx ชื่อ - สกุล XXXXXX</div>
-                        <div className="text-[22px]">ห้อง XXXX</div>
+                        <div className="xl:text-[20px] lg:text-[18px] md:text-[10px]">เลขที่ XX</div>
+                        <div className="xl:text-[20px] lg:text-[18px] md:text-[10px]">รหัส xxxxxxxxxxxxx ชื่อ - สกุล XXXXXX</div>
+                        <div className="xl:text-[20px] lg:text-[18px] md:text-[10px]">ห้อง XXXX</div>
                     </div>
                 </div>
             </div>
+            {showAlert && (
+                <AlertCard
+                    student={{
+                        student_number: studentNumber,
+                        student_id: mainStudent?.student_id || "",
+                        full_name: mainStudent?.full_name || "",
+                        studentRoom,
+                    }}
+                    onConfirm={() => {
+                        alert("คุณกดยืนยันแล้ว");
+                        setShowAlert(false);
+                    }}
+                    onCancel={() => setShowAlert(false)}
+                />
+            )}
         </div>
+
     );
 }
